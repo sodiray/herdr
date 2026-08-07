@@ -54,6 +54,19 @@ herdr
 
 run your agents, split panes, walk away. `ctrl+b q` detaches, `herdr` reattaches. [quick start →](https://herdr.dev/docs/quick-start/)
 
+## download a release binary
+
+For a release tag, download the Linux x86_64 archive and its checksum from predictable release asset URLs:
+
+```bash
+tag=v1.2.3
+base_url="https://github.com/<owner>/<repository>/releases/download/${tag}"
+curl -fLO "${base_url}/herdr-linux-x86_64.tar.gz"
+curl -fLO "${base_url}/herdr-linux-x86_64.tar.gz.sha256"
+sha256sum --check herdr-linux-x86_64.tar.gz.sha256
+tar -xzf herdr-linux-x86_64.tar.gz
+```
+
 ## docs
 
 everything lives at [herdr.dev/docs](https://herdr.dev/docs/): [quick start](https://herdr.dev/docs/quick-start/) · [concepts](https://herdr.dev/docs/concepts/) · [supported agents](https://herdr.dev/docs/agents/) · [keyboard](https://herdr.dev/docs/keyboard/) · [configuration](https://herdr.dev/docs/configuration/) · [session state](https://herdr.dev/docs/session-state/) · [remote](https://herdr.dev/docs/persistence-remote/) · [integrations](https://herdr.dev/docs/integrations/) · [plugins](https://herdr.dev/docs/plugins/) · [socket api](https://herdr.dev/docs/socket-api/)

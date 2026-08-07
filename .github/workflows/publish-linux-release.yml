@@ -1,0 +1,107 @@
+name: Publish Linux release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, for example v1.2.3
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  RUST_TOOLCHAIN_VERSION: 1.96.1
+  ZIG_VERSION: 0.15.2
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RELEASE_TAG" in
+            v*) ;;
+            *)
+              echo "Release tags must start with v." >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN_VERSION }}
+
+      - name: Restore Cargo registry cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install and verify Zig
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
+          archive_path="${RUNNER_TEMP}/${archive}"
+          signature_path="${archive_path}.minisig"
+          install_path="${RUNNER_TEMP}/zig-${ZIG_VERSION}"
+          curl --fail --location --retry 3 --output "$archive_path" "https://ziglang.org/download/${ZIG_VERSION}/${archive}"
+          curl --fail --location --retry 3 --output "$signature_path" "https://ziglang.org/download/${ZIG_VERSION}/${archive}.minisig"
+          sudo apt-get update
+          sudo apt-get install --yes minisign
+          minisign -Vm "$archive_path" -P 'RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U'
+          mkdir -p "$install_path"
+          tar --extract --file "$archive_path" --xz --strip-components=1 --directory "$install_path"
+          zig_path="${install_path}/zig"
+          test -x "$zig_path"
+          test "$("$zig_path" version)" = "$ZIG_VERSION"
+          echo "${install_path}" >> "$GITHUB_PATH"
+          echo "ZIG=${zig_path}" >> "$GITHUB_ENV"
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir dist
+          tar --create --gzip --file dist/herdr-linux-x86_64.tar.gz --directory target/release herdr
+          (
+            cd dist
+            sha256sum herdr-linux-x86_64.tar.gz > herdr-linux-x86_64.tar.gz.sha256
+          )
+
+      - name: Publish release assets
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          assets=(
+            dist/herdr-linux-x86_64.tar.gz
+            dist/herdr-linux-x86_64.tar.gz.sha256
+          )
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" --title "$RELEASE_TAG" --notes "Linux x86_64 release binary and SHA-256 checksum."
+          fi
